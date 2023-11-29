@@ -6,5 +6,5 @@
     <code>pip install -r requirements.txt</code>
 
 
-2. Заполнить данные БД в файле [settings.py](/settings.py)
+2. Заполнить данные БД в файле [.env](.env)
 
