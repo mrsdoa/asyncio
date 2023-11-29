@@ -1,47 +1,61 @@
 import asyncio
+from sqlalchemy import Column, Integer, String
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from settings import DB_USER, DB_NAME, DB_PASSWORD
 
-from models import *
-import aiohttp
-import asyncpg
-import more_itertools
-from more_itertools import chunked
+Base = declarative_base()
+sw_db = f'postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@localhost:5432/{DB_NAME}'
 
-async def get_person(person_id, session):
-    response = await session.get(f'https://swapi.dev/api/people/{person_id}')
-    json = await response.json()
-    if 'name' in json:
-        print(json['name'])
-        return [(json['birth_year'], json['eye_color'], " ".join(json['films']),
-                  json['gender'], json['hair_color'], json['height'], json['homeworld'],
-                  json['mass'], json['name'], json['skin_color'], " ".join(json['species']),
-                  " ".join(json['starships']), " ".join(json['vehicles']))]
-    else:
-        return [('-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-')]
+class StarWarPerson(Base):
+    __tablename__ = 'heroes'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    birth_year = Column(String)
+    eye_color = Column(String)
+    films = Column(String)
+    gender = Column(String)
+    hair_color = Column(String)
+    height = Column(String)
+    homeworld = Column(String)
+    mass = Column(String)
+    skin_color = Column(String)
+    species = Column(String)
+    starships = Column(String)
+    vehicles = Column(String)
+
+async def save_to_db(data):
+    engine = create_async_engine(sw_db, echo=True,)
+
+    async with engine.begin() as db_con:
+        await db_con.run_sync(Base.metadata.drop_all)
+        await db_con.run_sync(Base.metadata.create_all)
+
+    async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async with async_session() as session:
+        async with session.begin():
+            for item in data:
+                person = StarWarPerson(
+                    name=item['name'],
+                    birth_year=item['birth_year'],
+                    eye_color=item['eye_color'],
+                    films=item['films'],
+                    gender=item['gender'],
+                    hair_color=item['hair_color'],
+                    height=item['height'],
+                    homeworld=item['homeworld'],
+                    mass=item['mass'],
+                    skin_color=item['skin_color'],
+                    species=item['species'],
+                    starships=item['starships'],
+                    vehicles=item['vehicles'],
+                )
+                session.add(person)
+
+        await session.commit()
 
 
-
-async def get_people(people_ids):
-    tasks = [asyncio.create_task(get_person(person_id)) for person_id in people_ids]
-    for task in tasks:
-        tasks_result = await task
-        yield tasks_result
-
-async def insert_users(pool: asyncpg.Pool, people):
-    query = 'INSERT INTO users (birth_year, eye_color, films, gender, hair_color, height, homeworld, mass, name, ' \
-            'skin_color, species, starships, vehicles) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)'
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.executemany(query, people)
-
-async def main():
-    pool = await asyncpg.create_pool(engine, min_size=20, max_size=20)
-
-    for person_ids_chunk in more_itertools.chunked(range(1, 100), 10):
-        coros = []
-        async for person in get_people(person_ids_chunk):
-            coros.append(asyncio.create_task(insert_users(pool, person)))
-
-    await asyncio.gather(*coros)
-    await pool.close()
-
-asyncio.run(main())
+asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
